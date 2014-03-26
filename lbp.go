@@ -1,13 +1,14 @@
 package lbp
 
 import (
+	"log"
+	"math"
+	"os"
+
 	"image"
 	"image/color"
 	_ "image/jpeg"
 	_ "image/png"
-	"log"
-	"math"
-	"os"
 )
 
 type Lbp struct {

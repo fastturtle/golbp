@@ -1,14 +1,13 @@
-package main
+package lbp
 
 import (
-	"fmt"
+	"image"
+	"image/color"
+	_ "image/jpeg"
+	_ "image/png"
 	"log"
 	"math"
 	"os"
-
-	"image"
-	"image/color"
-	"image/jpeg"
 )
 
 type Lbp struct {
@@ -43,7 +42,19 @@ func NewLbp() *Lbp {
 	return lbp
 }
 
-func (lbp *Lbp) preprocess(im image.Image, bounds image.Rectangle) {
+func (lbp *Lbp) preprocess(path string) (image.Image, error) {
+	r, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	im, _, err := image.Decode(r)
+	if err != nil {
+		return nil, err
+	}
+
+	bounds := im.Bounds()
 	lbp.image = make([]uint8, bounds.Max.Y*bounds.Max.X)
 
 	// Store the image as a Y * X uint8 array (grayscale)
@@ -53,16 +64,22 @@ func (lbp *Lbp) preprocess(im image.Image, bounds image.Rectangle) {
 			lbp.image[x+y*bounds.Max.X] = gray.Y
 		}
 	}
+
+	return im, nil
 }
 
 func (lbp *Lbp) at(x int, y int, w int) uint8 {
 	return lbp.image[x+y*w]
 }
 
-func (lbp *Lbp) Process(im image.Image, regionSize int) []float64 {
-	bounds := im.Bounds()
-	lbp.preprocess(im, bounds)
+func (lbp *Lbp) Process(path string, regionSize int) []float64 {
+	im, err := lbp.preprocess(path)
+	if err != nil {
+		log.Fatal(err)
+		return nil
+	}
 
+	bounds := im.Bounds()
 	rwidth := bounds.Max.X / regionSize
 	rheight := bounds.Max.Y / regionSize
 	rstride := rwidth * rheight
@@ -158,24 +175,4 @@ func (lbp *Lbp) Process(im image.Image, regionSize int) []float64 {
 	}
 
 	return features
-}
-
-func main() {
-	r, err := os.Open("Barack-Obama5.jpg")
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
-	defer r.Close()
-
-	im, err := jpeg.Decode(r)
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
-	lbp := NewLbp()
-
-	feats := lbp.Process(im, 20)
-
-	fmt.Println(feats[0])
 }

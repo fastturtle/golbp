@@ -4,14 +4,22 @@
 package lbp
 
 import (
-	"math"
-	"os"
-
+	"fmt"
 	"image"
 	"image/color"
 	_ "image/jpeg"
 	_ "image/png"
+	"math"
+	"os"
+	"path"
+	"strings"
+	"sync"
 )
+
+type feature struct {
+	data  []float64
+	Class string
+}
 
 // The Lbp struct holds information relevant to the extraction
 // of local binary patterns.
@@ -86,7 +94,7 @@ func (lbp *Lbp) preprocess(path string) ([]uint8, image.Rectangle, error) {
 // run over the entire image, and a histogram of its (quantized) values is
 // stored for each region. These histograms are stored continguously in the
 // only return value of this function.
-func (lbp *Lbp) Process(path string, regionSize int) ([]float64, error) {
+func (lbp *Lbp) Process(path string, regionSize int) (*feature, error) {
 	im, bounds, err := lbp.preprocess(path)
 	if err != nil {
 		return nil, err
@@ -95,18 +103,26 @@ func (lbp *Lbp) Process(path string, regionSize int) ([]float64, error) {
 	maxX := bounds.Max.X
 	maxY := bounds.Max.Y
 
-	rwidth := maxX / regionSize
-	rheight := maxY / regionSize
+	// rwidth := maxX / regionSize
+	// rheight := maxY / regionSize
+	rwidth := 50
+	rheight := 50
 	rstride := rwidth * rheight
 
-	features := make([]float64, lbp.dim*rstride)
+	var rSizeX, rSizeY float32
+	rSizeX = float32(maxX) / float32(rwidth)
+	rSizeY = float32(maxY) / float32(rheight)
+
+	feat := new(feature)
+	feat.Class = path
+	feat.data = make([]float64, lbp.dim*rstride)
 
 	var bits uint8
 	var wy1, wy2, wx1, wx2 float64
 	var ry1, ry2, rx1, rx2 int
 	for y := 1; y < maxY-1; y++ {
 
-		wy1 = (float64(y)+0.5)/float64(regionSize) - 0.5
+		wy1 = (float64(y)+0.5)/float64(rSizeY) - 0.5
 		ry1 = int(math.Floor(wy1))
 		ry2 = ry1 + 1
 		wy2 = wy1 - float64(ry1)
@@ -117,7 +133,7 @@ func (lbp *Lbp) Process(path string, regionSize int) ([]float64, error) {
 		}
 
 		for x := 1; x < maxX-1; x++ {
-			wx1 = (float64(x)+0.5)/float64(regionSize) - 0.5
+			wx1 = (float64(x)+0.5)/float64(rSizeX) - 0.5
 			rx1 = int(math.Floor(wx1))
 			rx2 = rx1 + 1
 			wx2 = wx1 - float64(rx1)
@@ -157,16 +173,16 @@ func (lbp *Lbp) Process(path string, regionSize int) ([]float64, error) {
 			bin := int(lbp.mapping[bits])
 
 			if rx1 >= 0 && ry1 >= 0 {
-				features[bin*rstride+ry1*rwidth+rx1] += wx1 * wy1
+				feat.data[bin*rstride+ry1*rwidth+rx1] += wx1 * wy1
 			}
 			if rx2 < rwidth && ry1 >= 0 {
-				features[bin*rstride+ry1*rwidth+rx2] += wx2 * wy1
+				feat.data[bin*rstride+ry1*rwidth+rx2] += wx2 * wy1
 			}
 			if rx1 >= 0 && ry2 < rheight {
-				features[bin*rstride+ry2*rwidth+rx1] += wx1 * wy2
+				feat.data[bin*rstride+ry2*rwidth+rx1] += wx1 * wy2
 			}
 			if rx2 < rwidth && ry2 < rheight {
-				features[bin*rstride+ry2*rwidth+rx2] += wx2 * wy2
+				feat.data[bin*rstride+ry2*rwidth+rx2] += wx2 * wy2
 			}
 
 		}
@@ -179,21 +195,74 @@ func (lbp *Lbp) Process(path string, regionSize int) ([]float64, error) {
 		for rx := 0; rx < rwidth; rx++ {
 			norm = 0
 			for k := 0; k < lbp.dim; k++ {
-				norm += features[k*rstride+offset]
+				norm += feat.data[k*rstride+offset]
 			}
 			norm = math.Sqrt(norm) + 1e-10
 			for k := 0; k < lbp.dim; k++ {
-				features[k*rstride+offset] = math.Sqrt(features[k*rstride+offset]) / norm
+				feat.data[k*rstride+offset] = math.Sqrt(feat.data[k*rstride+offset]) / norm
 			}
 		}
 		offset++
 	}
 
-	return features, err
+	return feat, err
+}
+
+func (lbp *Lbp) ProcessAll(dirPath string, nWorkers int) ([]feature, error) {
+	dir, err := os.Open(dirPath)
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := dir.Readdirnames(0)
+	if err != nil {
+		return nil, err
+	}
+	// feats := make([][]float64, 1)
+	var feats []feature
+
+	images := make(chan string)
+	go func() {
+		for _, fname := range entries {
+			if !isImage(fname) {
+				continue
+			}
+			images <- path.Join(dirPath, fname)
+		}
+		close(images)
+	}()
+
+	var done sync.WaitGroup
+	for i := 0; i < nWorkers; i++ {
+		done.Add(1)
+		go func() {
+			for fpath := range images {
+				h, err := lbp.Process(fpath, 20)
+				if err != nil {
+					fmt.Println(err)
+				}
+				if err == nil {
+					feats = append(feats, *h)
+				}
+			}
+			done.Done()
+		}()
+	}
+	done.Wait()
+	return feats, nil
+
 }
 
 // Convenience function for using 2-d indexing on a
 // 1-d array.
 func at(image []uint8, x int, y int, w int) uint8 {
 	return image[x+y*w]
+}
+
+func isImage(fname string) bool {
+	if !strings.Contains(fname, ".jpg") && !strings.Contains(fname, ".png") && !strings.Contains(fname, ".png") {
+		return false
+	}
+	return true
+
 }

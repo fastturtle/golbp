@@ -5,8 +5,10 @@ import (
 	"math"
 )
 
+// Prototype function for a distance metric
 type dist func(h1 []float64, h2 []float64) (float64, error)
 
+// Chi-squared distance measure
 func Chisq(h1 []float64, h2 []float64) (float64, error) {
 	if len(h1) != len(h2) {
 		return -1.0, errors.New("The histograms are not of equal length.")

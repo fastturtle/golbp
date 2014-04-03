@@ -2,9 +2,13 @@
 This is an implementation of [VLFeat's local binary pattern library](http://www.vlfeat.org/api/lbp.html) written in Go. It implements the local binary patterns algorithm described by (Ojala, Pietikainen, & Harwood, 1996).
 
 # Installation
+
+```go
 go get github.com/fastturtle/lbp
+```
 
 # Usage
+
 ```go
 package main
 

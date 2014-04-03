@@ -3,7 +3,7 @@ This is an implementation of [VLFeat's local binary pattern library](http://www.
 
 # Installation
 
-```go
+```
 go get github.com/fastturtle/lbp
 ```
 

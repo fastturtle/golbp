@@ -12,13 +12,19 @@ import (
 	"math"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"sync"
 )
 
 type feature struct {
 	data  []float64
-	Class string
+	Class string // A unique identifer for the feature set (ie. file name)
+}
+
+type distFeature struct {
+	feature
+	dist float64
 }
 
 // The Lbp struct holds information relevant to the extraction
@@ -94,7 +100,7 @@ func (lbp *Lbp) preprocess(path string) ([]uint8, image.Rectangle, error) {
 // run over the entire image, and a histogram of its (quantized) values is
 // stored for each region. These histograms are stored continguously in the
 // only return value of this function.
-func (lbp *Lbp) Process(path string, regionSize int) (*feature, error) {
+func (lbp *Lbp) Process(path string, class string) (*feature, error) {
 	im, bounds, err := lbp.preprocess(path)
 	if err != nil {
 		return nil, err
@@ -103,8 +109,6 @@ func (lbp *Lbp) Process(path string, regionSize int) (*feature, error) {
 	maxX := bounds.Max.X
 	maxY := bounds.Max.Y
 
-	// rwidth := maxX / regionSize
-	// rheight := maxY / regionSize
 	rwidth := 50
 	rheight := 50
 	rstride := rwidth * rheight
@@ -114,7 +118,7 @@ func (lbp *Lbp) Process(path string, regionSize int) (*feature, error) {
 	rSizeY = float32(maxY) / float32(rheight)
 
 	feat := new(feature)
-	feat.Class = path
+	feat.Class = class
 	feat.data = make([]float64, lbp.dim*rstride)
 
 	var bits uint8
@@ -208,7 +212,7 @@ func (lbp *Lbp) Process(path string, regionSize int) (*feature, error) {
 	return feat, err
 }
 
-func (lbp *Lbp) ProcessAll(dirPath string, nWorkers int) ([]feature, error) {
+func (lbp *Lbp) ProcessAll(dirPath string, class string, nWorkers int) ([]feature, error) {
 	dir, err := os.Open(dirPath)
 	if err != nil {
 		return nil, err
@@ -220,7 +224,7 @@ func (lbp *Lbp) ProcessAll(dirPath string, nWorkers int) ([]feature, error) {
 	}
 	// feats := make([][]float64, 1)
 	var feats []feature
-
+	sort.Strings(entries)
 	images := make(chan string)
 	go func() {
 		for _, fname := range entries {
@@ -237,7 +241,7 @@ func (lbp *Lbp) ProcessAll(dirPath string, nWorkers int) ([]feature, error) {
 		done.Add(1)
 		go func() {
 			for fpath := range images {
-				h, err := lbp.Process(fpath, 20)
+				h, err := lbp.Process(fpath, class)
 				if err != nil {
 					fmt.Println(err)
 				}

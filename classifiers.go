@@ -1,9 +1,5 @@
 package lbp
 
-import (
-	"fmt"
-)
-
 type classifier interface {
 	Classify([]feature) (int, error)
 }
@@ -14,29 +10,46 @@ type NearestNeighbor struct {
 	d         dist
 }
 
-func NewNearestNeighbor(neighbors []feature, dMetric dist) *NearestNeighbor {
+func NewNearestNeighbor(neighbors []feature, n int, dMetric dist) *NearestNeighbor {
 	nn := new(NearestNeighbor)
 	nn.neighbors = neighbors
 	nn.d = dMetric
+	nn.n = n
 	return nn
 }
 
-func (nn *NearestNeighbor) Classify(input *feature) (*feature, error) {
-	bestVal := -1.0
-	var best feature
+func (nn *NearestNeighbor) Classify(input *feature) (string, error) {
+	best := new(PriorityQueue)
 
-	for i, feats := range nn.neighbors {
-		fmt.Println(i)
-		tmp, err := nn.d(input.data, feats.data)
+	for _, feat := range nn.neighbors {
+		val, err := nn.d(input.data, feat.data)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 
-		if tmp < bestVal || bestVal < 0 {
-			bestVal = tmp
-			best = feats
+		if best.Len() < 5 {
+			best.Push(&Item{value: feat, priority: -val})
+			continue
 		}
+
+		if worst := best.Pop().(*Item); val < -worst.priority {
+			best.Push(&Item{value: feat, priority: -val})
+		} else {
+			best.Push(worst)
+		}
+
 	}
 
-	return &best, nil
+	c := 0
+	var class string
+	counts := make(map[string]int)
+	for _, item := range *best {
+		feat := item.value.(feature)
+		counts[feat.Class]++
+		if counts[feat.Class] > c {
+			class = feat.Class
+			c = counts[feat.Class]
+		}
+	}
+	return class, nil
 }
